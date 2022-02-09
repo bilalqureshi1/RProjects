@@ -1,0 +1,263 @@
+---
+title: "DD2"
+author: "Bilal Qureshi"
+date: "05/11/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Loading the Datasets
+
+```{r message=FALSE}
+library("readr")
+uti <- read_csv("uti.csv")
+bmes=read_csv("bmes1.csv")
+owl=read_csv("Owl.csv") %>%
+  mutate(Nest = factor(Nest))
+```
+ins
+```{r echo=TRUE}
+library(readr)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(janitor)
+library(patchwork)
+library(gamlss)
+library(broom)
+library(MASS)
+library(ggmosaic)
+library(stargazer)
+library(pROC)
+library(pscl)
+library(VGAM)
+library(lme4)
+library(geepack)
+library(fancycut)
+
+```
+# Question 1 
+
+## (a)
+
+No. of Months have to be adjusted due to the fact that the data has to be normal when the time periods are normal. For this to take place we will have to add offset term. This will assist in avoiding entries that are irrelavant. 
+
+```{r fig.height=2.5}
+ggplot(uti,aes(x=months))+
+  geom_bar()
+```
+
+
+We can use offset on log of months because it used when individuals are observed having different time periods.  
+
+## (b)
+
+*Episodes*
+
+```{r fig.height=2.5}
+ggplot(uti,aes(x=episode))+
+  geom_bar()
+```
+
+The plot above shows a very high number of 0 episodes as compared to the other three categories and episodes is a response variables so it means that we will have to consider zero inflated models for our data. 
+
+*Sqrt_cd4*
+
+```{r fig.height=2.5}
+ggplot(uti,aes(y=sqrt_cd4,group=episode))+
+  geom_boxplot()+
+  labs(x = "Episodes")
+```
+
+From left to right, the box plots go from episode 0 to 3 and we observe that Men with high number of CD4 cells have 0 episodes and as the cells decrease, they get episodes however, the median for episode 2 is slightly higher than episode 1. The Outlier in episode1 category is at same level as the mean of cd4 in Episode 0 but he gets an episode which is odd thing. For episode, there are very few observations so we don't see variations from box plot.  
+
+*Months*
+
+```{r fig.height=3}
+ggplot(uti) +
+  geom_histogram(aes(x = offset(log(months))))
+```
+
+No skewness can be seen in the above plot. 
+
+## (c)
+
+We have to check poisson, negative binomial, and zero inflated models of both. Different models are made and then the best one was selected using AIC score. 
+
+```{r}
+m1 = glm(episode~sqrt_cd4 + offset(log(months)),family=poisson,data=uti)
+m2 <- glm.nb(episode~sqrt_cd4 + offset(log(months)), data = uti)
+m3 <- gamlss(episode ~ sqrt_cd4+offset(log(months)),
+             family = ZIP, data = uti,trace = F)
+m4 <- gamlss(episode ~ sqrt_cd4+offset(log(months))|1,
+             family = ZIP, data = uti,trace = F)
+m5 <- gamlss(episode ~ sqrt_cd4+offset(log(months)), 
+             family = NBI, data = uti,trace = F)
+m6 <- gamlss(episode ~ sqrt_cd4+offset(log(months))|1,
+             family = NBI, data = uti,trace = F)
+```
+
+
+| Model | AIC score    |
+|-------|--------------|
+| m1    | `r AIC(m1)`  |
+| m2    | `r AIC(m2)`  |
+| m3    | `r AIC(m3)`  |
+| m4    | `r AIC(m4)`  |
+| m5    | `r AIC(m5)`  |
+| m6    | `r AIC(m6)`  |
+
+The AIC values show that our zero inflated poisson model poisson model (m3) is the best model. And there is also no change in deviance of ZIP and ZINB moddels which confirms the selection of m3. 
+\newpage
+```{r}
+summary(m3)
+```
+
+## (d)
+
+The final model equation is 
+
+$$Y_i \sim ZIP(\mu_i,\pi_i)$$
+
+$$log(\hat{\mu_i})=-1.58819 - 0.10703x_{i1}$$
+
+$$log(\frac{\hat{\pi_i}}{1-\hat{\pi_i}})=0.1290$$
+
+```{r fig.height=3.8,message=FALSE}
+plot(m3)
+```
+
+The (transformed) quantile residuals are approximately normally distributed which is shown in the bottom two plots. The normal QQ line shows almost no significant deviated points. So our model is a decent fit. 
+
+```{r warning=FALSE,message=FALSE,results='hide'}
+augment_m3 = augment(m3, type.predict = "response")
+```
+
+*Goodness of Fit*
+
+```{r message=FALSE,warning=FALSE}
+roc = roc(uti$episode, augment_m3$.fitted)
+roc$auc
+```
+
+
+The area under the curve of *model's ROC is 0.727* which is above
+average as well. Any model having a roc of above 0.7 is deemed as a good
+fit model having good predictability.
+
+```{r fig.height=2.5}
+ggroc(roc) +
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+color = "grey", linetype = "dashed"
+) +
+theme(legend.position = "top")
+```
+
+## (f)
+
+We see that If we increase the CD4 cells by one unit, the mean number of urinary tract infections decrease by 10.2% which is found by $1-\exp^{-0.10703}$. 
+
+We can find the $\pi$ from model by:
+
+$$\pi_i=\frac{e^{(0.1290)}}{1+e^{(0.1290)}}=-8.26$$
+
+The $\pi$ value or the sigma coefficient has a p value of 0.791 which shows that it is not significant.
+
+## (g)
+
+The zero-inflated model is plausible for this data set, as more proportion of the men population does not have a urinary tract infection which is also evident from our data set and it biases the sample towards having more $y_i = 0$. Also, the poisson model does not show any sign of over dispersion and hence we choose zero inflated poisson as our best model.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(MASS)
+
+```
+
+```{r}
+   # alternatively, this also loads %>%
+
+
+```
+
+## R Markdown
+```{r setup, include=FALSE}
+
+library(magrittr) # needs to be run every time you start R and want to use %>%
+library(dplyr)    # alternatively, this also loads %>%
+```
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+Owl <- read.csv("Owl.csv",sep=",",header=TRUE)%>%mutate(Nest = factor(Nest))
+## The similarity among groups indicates utility of GLMM and GEE model
+model_cs <- glm.nb(SiblingNegotiation ~ FoodTreatment + SexParent +
+offset(log(BroodSize)), data= Owl)
+library(lme4)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+visits.glmer <- glmer.nb(SiblingNegotiation ~ factor(FoodTreatment) + factor(SexParent) +
+offset(log(BroodSize)) + (1 | Nest), data = Owl)
+summary(visits.glmer)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+
+AIC(model_cs, visits.glmer)
+```
+
+```{r}
+BIC(model_cs, visits.glmer)
+```
+*Question (3)*
+```{r}
+Owl <- read.csv("Owl.csv",sep=",",header=TRUE) %>%
+mutate(Nest = factor(Nest))
+
+## The similarity among groups indicates utility of GLMM and GEE model 
+
+model_cs <- glm.nb(SiblingNegotiation ~ FoodTreatment + SexParent +
+offset(log(BroodSize)), data= Owl)
+library(lme4)
+visits.glmer <- glmer.nb(SiblingNegotiation ~ factor(FoodTreatment) + factor(SexParent) +
+offset(log(BroodSize)) + (1 | Nest), data = Owl)
+summary(visits.glmer)
+AIC(model_cs, visits.glmer)
+BIC(model_cs, visits.glmer)
+```
+*The fitted model is given by
+$$Y_{ij} \sim NB(\mu_{ij}, \nu)$$
+$$\log (\mu_{ij}) = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + b_i$$
+where, $$b_i \sim N(0, \nu^2).$$
+
+```{r}
+###GEE Model
+library(geepack)
+library(tidyverse)
+library(janitor)
+
+owl.gee.exch <- geeglm(SiblingNegotiation ~ FoodTreatment*SexParent, id = BroodSize,
+corstr = "exchangeable", data = Owl)
+
+summary(owl.gee.exch)
+
+
+owl.gee.ar1 <- geeglm(SiblingNegotiation ~ FoodTreatment*SexParent, id = BroodSize, corstr = "ar1", data = Owl)
+summary(owl.gee.ar1)$corr
+```
+```{r}
+
+
+```

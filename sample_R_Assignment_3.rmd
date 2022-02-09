@@ -1,0 +1,366 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+---
+title: "STAT8111 - Generalized Linear Models"
+subtitle: "Assignment 3"
+author: "Bilal Qureshi - 46119043"
+date: "05/11/2021"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+##fontsize: 10pt
+---
+```{r,include=FALSE,message=FALSE,warning=FALSE}
+library(ggplot2)
+library(cowplot)
+library(gamlss)
+library(MASS)
+library(dplyr)
+library(VGAM)
+library(geepack)
+library(tidyverse)
+library(janitor)
+library(lme4)
+library(readr)
+library(mgcv)
+library(tidyverse)
+library(ggplot2)
+library(janitor)
+library(patchwork)
+library(gamlss)
+library(broom)
+library(MASS)
+library(ggmosaic)
+library(stargazer)
+library(pROC)
+library(pscl)
+library(VGAM)
+library(lme4)
+library(geepack)
+library(fancycut)
+```
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+```{r}
+uti <- read.csv("uti.csv")
+#View(uti)
+library(GGally)
+```
+# QUESTION No. 1: Analysis of UTI data
+
+## Part:a
+No. of Months have to be adjusted due to the fact that the data has to be normal when the time periods are normal. For this to take place we will have to add offset term. This will assist in avoiding entries that are irrelavant. 
+
+```{r,out.height="50%",out.width="50%"}
+uti.data <- read.csv("UTI.csv",
+                     header=TRUE,sep=",")
+ggplot(uti.data,aes(x=months))+
+  geom_bar()
+```
+This will curbed when we take, offset of log of months which then will be used because individuals have different month periods.
+
+
+## Part:b
+
+```{r ,out.height="50%",out.width="50%"}
+mfrow=c(1,3)
+par(mfrow=c(1,3))
+a<-ggplot(uti.data) +
+geom_bar(aes(x = episode))
+
+b<-ggplot(uti.data,aes(y=sqrt_cd4,group=episode))+
+  geom_boxplot()+
+  labs(x = "Episodes")
+
+c<-ggplot(uti.data) +
+  geom_histogram(aes(x = offset(log(months))))
+plot_grid(a,b,c)
+
+```
+**Episodes:** 
+the response variable category 0 and episodes have greater episodes then the other categories. Hence zero inflated model will be taken under consideration.
+
+**Sqrt_cd4:**
+We can observe from 3 to 0 episodes that median of 0th episode is highest. We can also observe the outlier of in 1st observation is nearer to the median of 0th observation. The 3rd observation is more then the 2nd one. Inc case of eposides we don't see massive variations.
+**Months:** 
+In the graph no indicator of skewness is found.
+
+```{r out.height="50%",out.width="50%",include=FALSE}
+par(mfrow = c(2, 2))
+histDist(uti$episode,
+family = PO, main = "Poisson fit",
+xlab = "Number of episodes", ylab = "Probability"
+)
+```
+
+
+
+```{r, out.height="50%",out.width="50%"}
+histDist(uti$episode,
+family = NBI, main = "Negative binomial fit",
+xlab = "Number of episodes", ylab = "Probability"
+)
+
+```
+```{r out.height="50%",out.width="50%"}
+histDist(uti$episode,
+family = ZIP, main = "ZIP fit",
+xlab = "Number of episodes", ylab = "Probability"
+)
+```
+```{r out.height="50%",out.width="50%"}
+histDist(uti$episode,
+family = ZINBI, main = "ZINB fit",
+xlab = "Number of episodes", ylab = "Probability"
+)
+
+```
+
+We can confirm that the episodes response has maximum number of zeros, from which negative binomial and poisson can't be fit.
+The models zip and zinb look perfect for the inflated zero data.
+
+```{r,out.height="50%",out.width="50%"}
+m_nbinomial1<- glm.nb(episode ~ sqrt_cd4+offset(log(months)),data =uti)
+m_poisson1 <- glm(episode ~ sqrt_cd4+offset(log(months)),family = poisson,data =uti)
+m_poisson <- glm(episode ~ offset(log(months)),family = poisson,data =uti)
+m_nbinomial<- glm.nb(episode ~ offset(log(months)),data =uti)
+m_zip1 <- gamlss(episode ~ sqrt_cd4+offset(log(months)),sigma.formula = ~ sqrt_cd4,family = ZIP, data=uti) 
+
+```
+```{r,out.height="50%",out.width="50%"}
+m_zip <- gamlss(episode ~ offset(log(months)),family = ZIP, data = uti)
+```
+```{r,out.height="50%", out.width="50%"}
+m_zinbi <- gamlss(episode ~offset(log(months)),family = ZINBI, data = uti)
+```
+```{r,out.height="50%", out.width="50%"}
+m_zinbi1 <- gamlss(episode ~ sqrt_cd4+offset(log(months)),sigma.formula = ~ sqrt_cd4,family = ZINBI, data = uti)
+
+```
+```{r}
+AIC(m_poisson,m_poisson1,m_nbinomial,m_nbinomial1,m_zip,m_zip1,m_zinbi,m_zinbi1)
+summary(m_zip1)
+```
+From the above AIC and BIC values, we can see that zip model has low score.
+Zero Inflated poisson distribution(ZIP) assumes there are two subpopulations.proportion pi of
+the population is sub-population 1, which only generates zero counts.proportion 1 - pi of the
+population is sub-population 2, which generates counts according to the Poisson distribution.
+
+d)
+Fitted Model
+$$Linear\ models\ will\ be selected\ for\ both \ \mu\ and \ \pi$$ 
+$$Yi = ZIP(\mu i, \pi i)$$
+
+$$For\  model\ \ Yi\ ZIP(\mu i, \pi i),\ independently,\ for\ i = 1, ......., n \ with : \mu function$$
+$$log(\mu i) = \ sigma \ function - 0.011xi\ \ - 2.27$$
+
+$$log(\frac{\pi ^i}{1 \ - \pi ^i}) = -1.09+0.153x1$$
+$$Where\ xi\ =\ Sqrt\ of\ cd4$$
+e)
+```{r out.height="50%", out.width="50%"}
+par(mfcol=c(5,3),mai=c(0.5,0.5,0.5,0))
+plot(m_zip1)
+```
+
+For QQ plot as all points are closer to the straight line hence it is normal.
+Density esimates show normality.
+We can observe scatter in quantile residual plots meaning assumption of linearity is satisfied.
+
+Goodness of Fit:
+
+```{r out.height="50%", out.width="50%"}
+term.plot(m_zip1)
+
+```
+Model is a good fit for data looking at the graph. The term that is smoother is more significant.
+Variance is almost equal to 1, which means our model is fitted very well.
+(f)
+$$\mu\ equation$$
+$$log(\mu i) = \ - 0.011xi\ - 2.27\ \ sigma\ function$$
+$$log(\frac{\pi ^i}{\ - \pi ^i+1}) = 0.153x1 \ - 1.09$$
+Where xi = Sqrt of cd4
+> Poisson regression fitting 
+
+
+For function mu, increasing sqrt_cd4 by 1, numbers of UTIs for observation period will increase by 1 which is,
+$$e^{\ - 0.11}=0.99$$
+
+
+For sigma function, if sqrt_cd4 is increased by 1, number of od UTIs in the period of observation will increase by
+$$e^\frac{0.153}{1}+e^(0.513) =>0.5.$$
+(g)
+
+
+For data zero inflated,ZINB model, poison model. ZIP model is the best one. The data has varience as 1, this means the model is fit well. Skewness, hence the model fits well
+
+
+Question 2 
+
+```{r}
+bmes1 <- read.csv("bmes1.csv")
+```
+(a)
+The variable race is a nominal variable where the category 1 has 99.31% observations among the total
+3499 observations. So race is not going to be helpful in predicting the subject’s BMI.
+
+
+Out of 3499 observations only catgery 1 has 99.31%. Hence the race is not heping in prediction of subjects BMI.
+```{r}
+hist(bmes1$race)
+```
+For frequency chart above it can be be seen that category 1 is the highest as mentioned in the top.
+
+(b)
+```{r}
+hist(bmes1$bmi)
+
+```
+For above the graph is right skewed. And no outlier is defined.
+```{r}
+bmes1["log_bmi"] = log(bmes1$bmi)
+hist(bmes1$log_bmi)
+
+```
+For above the graph is normal  And no outlier is defined.
+
+
+```{r}
+library(GGally)
+par(mfrow=c(1,2))
+a <- ggplot(bmes1,aes(x=age))+geom_histogram(bins = 40)
+b <- ggplot(bmes1,aes(x=bmi))+geom_histogram(bins = 40)
+c <- ggplot(bmes1,aes(x=log_bmi))+geom_histogram(bins = 40)
+d <- ggplot(bmes1,aes(x=race))+geom_histogram(bins = 40)
+plot_grid(a,b,c,d)
+```
+ Log_BMI: Is normally distributed and graph has no outlier
+ Race: Graph has maximum distribution towards 1
+ BMI: Graph is right skewed outlier near 60 is observed
+ Age: Paritially right skewed with no outliers observed
+
+```{r}
+par(mfrow=c(1,2))
+ggplot(bmes1,aes(x=age, y=log_bmi)) +geom_point()+labs(x='age', y='log_bmi', title='scatter')+geom_smooth()
+```
+
+We can observe an equal distribution for scatter plot. But since the line has a curvature hence the relationship is polynomial.
+
+```{r}
+model1 <-gamlss(log_bmi~age+factor(sex), data = bmes1)
+
+```
+
+```{r}
+model2 <-gamlss(log_bmi~poly(age,2)+factor(sex), data = bmes1)
+```
+```{r}
+model3 <-gamlss(log_bmi~poly(age,3)+factor(sex), data = bmes1)
+```
+
+```{r}
+AIC(model1,model2,model3)
+```
+Above the models are shown in integers and not float. Model 1 has the least AIC value of -2635.3 hence this is the best polynomial model for age and sex.
+
+```{r}
+summary(model2)
+```
+
+$$log(BMI)=0.00724(sex \ male)-0.98(age^2)-1.407(age)+3.241$$
+```{r}
+plot(model2)
+
+```
+For QQ plot as all points are closer to the straight line hence it is normal.
+Density esimates show normality.
+We can observe scatter in quantile residual plots meaning assumption of linearity is satisfied in against fitted values and against index.
+
+(c)
+
+```{r}
+bmes2<-bmes1 %>%
+mutate(
+categories = case_when(
+bmi < 18.5 ~ 'underweight',
+bmi>= 18.5 & bmi<25 ~'normal weight',
+bmi>=25 & bmi<30 ~'overweight',
+bmi>=30 ~ 'obese')
+)
+```
+
+```{r}
+head(bmes2)
+```
+```{r}
+library(VGAM)
+new_model <- vglm(formula=ordered(categories)~age+factor(sex), family = cumulative(parallel=TRUE), data = bmes2)
+summary(new_model)
+```
+$b_2==>\ \log(\frac{\gamma_{ij}}{-\gamma_{ij}+1})= - 0.25x_{i2}+0.0158x_{i1}+ 2.82$
+$b_1==>\ \log(\frac{\gamma_{ij}}{-\gamma_{ij}+1})=-0.59  - 0.25x_{i2} + 0.0158x_{i1}$
+$b_0==>\ \log(\frac{\gamma_{ij}}{-\gamma_{ij}+1})=   0.0158x_{i1} -1.286 - 0.25x_{i2}$
+
+
+
+Since our p-value is less than the assumed signinficance level at 95%, our assumption satisfied.
+Since, our deviance is 7808 on 10492 , which is acceptable and satifies our assumptions.
+
+Question 3
+
+```{r}
+Owl <- read.csv("Owl.csv")
+hist(Owl$SiblingNegotiation)
+```
+a)
+GLM is used when the dependent variable is quantitative, ordinal, count or binary. It can  be seen that  our dependent variable  count, and is not normally distributed , Hence glm model can be used. Parameters estimates are obtained by GEE
+(b)(i)
+```{r}
+v_glmer <- glmer.nb(SiblingNegotiation ~factor(FoodTreatment)+factor(SexParent) + offset(log(BroodSize)) + (1 | Nest), data = Owl)
+summary(v_glmer)
+```
+ii) Fitted Model
+$$log(SibilingNegotiation) =  0.048x2 - 0.67270x1 + 0.64466$$
+$$\ x2\ is\ Sex\ Parent\ (Male),\ x1 \ is \ Food \ Treatment \ (satisfied) $$
+where==> $b_i \sim N(0, \nu^2).$
+
+
+
+iii) Interpretation for Sex Parent
+When father is avalable baby owl speaks $$e^{0.048}=1.049$$ times of females which means 4.9 percent higher. $$ Our \ null \ hypothesis \ H _o: \ The \ baby \ owls \ beg \ instensly \ in \ presence \ of \ mother \ in \ greater \ amount \ than \ father$$
+
+
+iv)
+
+```{r}
+library(gamlss)
+model_cs <- glm.nb(SiblingNegotiation ~ FoodTreatment + SexParent +offset(log(BroodSize)), data= Owl)
+visits.glmm1 <- glm(SiblingNegotiation ~ FoodTreatment + SexParent +offset(log(BroodSize)), data= Owl, family = poisson, trace = FALSE)
+AIC(v_glmer,model_cs,visits.glmm1)
+```
+From the above AIC values, lowest is of v_glmer. All other AIC are greater hence we wont select those models.
+
+c)
+ i )
+
+Homogenous covarience happens when there is exchangable coorelation, corellation is equal for all and it is not depended upon values of lag. First degree of homogenous variances, between two observation changes. 
+
+ii)
+
+Exchangable connection structure sees on same subject that have homogeneous covariance, it doesn't rely upon the upsides of slack and correllation is equivalent for all. Where AR(1) is first level of homogeneous fluctuations, relationship between's two perceptions changes separately. 
+So , that is y we exchangable connection structure is more fitting.
+
+Fitted Models
+$$log(SibilingNegotiation) = - 3.508x1*x2 - 0.054x1+ 0.404x2 + 8.00475$$
+$$x_1 => FoodTreatment(satisfied), x_2 =>SexParent(Male)$$
+$$Interpreting\ the\ food \ treatment,\ when \ foodtreatment\ is\ satisfied,\ e-3.508\ =\ 0.030,\ which \ \mu \ 97  \ percent \ lower \ in \ sibiling \ negotiation.$$
+
+P value of foodtreatment < 0.05 hence our model is sig with respect to foodtreatment.
+
+
+
+
